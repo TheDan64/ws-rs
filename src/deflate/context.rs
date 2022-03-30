@@ -1,4 +1,4 @@
-use std::mem;
+use std::mem::{self, MaybeUninit};
 use std::slice;
 
 use super::ffi;
@@ -67,9 +67,9 @@ impl Compressor {
         debug_assert!(window_bits <= 15, "Received too large window size.");
 
         unsafe {
-            let mut stream: Box<ffi::z_stream> = Box::new(mem::zeroed());
+            let mut stream = Box::new(MaybeUninit::<ffi::z_stream>::zeroed());
             let result = ffi::deflateInit2_(
-                stream.as_mut(),
+                stream.as_mut_ptr(),
                 9,
                 ffi::Z_DEFLATED,
                 -window_bits as c_int,
@@ -79,7 +79,12 @@ impl Compressor {
                 mem::size_of::<ffi::z_stream>() as c_int,
             );
             assert!(result == ffi::Z_OK, "Failed to initialize compresser.");
-            Compressor { stream: stream }
+
+            // This is what Box<MaybeUninit<T>>::assume_init does, but it is not yet stable
+            let raw = Box::into_raw(stream);
+            let stream = Box::from_raw(raw as *mut ffi::z_stream);
+
+            Compressor { stream }
         }
     }
 
@@ -139,15 +144,20 @@ impl Decompressor {
         debug_assert!(window_bits <= 15, "Received too large window size.");
 
         unsafe {
-            let mut stream: Box<ffi::z_stream> = Box::new(mem::zeroed());
+            let mut stream = Box::new(MaybeUninit::<ffi::z_stream>::zeroed());
             let result = ffi::inflateInit2_(
-                stream.as_mut(),
+                stream.as_mut_ptr(),
                 -window_bits as c_int,
                 ZLIB_VERSION.as_ptr() as *const c_char,
                 mem::size_of::<ffi::z_stream>() as c_int,
             );
             assert!(result == ffi::Z_OK, "Failed to initialize decompresser.");
-            Decompressor { stream: stream }
+
+            // This is what Box<MaybeUninit<T>>::assume_init does, but it is not yet stable
+            let raw = Box::into_raw(stream);
+            let stream = Box::from_raw(raw as *mut ffi::z_stream);
+
+            Decompressor { stream }
         }
     }
 
